@@ -1,0 +1,45 @@
+version: '3'
+services:
+
+  postgres_movies:
+    image: postgres:16
+    container_name: postgres_movies
+    restart: always
+    volumes:
+      - postgres_movies_value:/var/lib/postgresql/data/
+      - ./postgres_to_es/movies_database.sql:/docker-entrypoint-initdb.d/movies_database.sql
+    env_file:
+      - ./.env
+    ports:
+      - 5433:5433
+    
+  django_admin:
+    container_name: django_admin
+    build: ./app
+    depends_on:
+      - postgres_movies
+    volumes:
+      - ./volumes/static:/opt/app/static
+      - ./volumes/media:/opt/app/media
+    env_file:
+      - .env
+    ports:
+      - 8400:8400
+
+  nginx:
+    container_name: nginx_s
+    image: nginx:1.25.3
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs:/etc/nginx/conf.d:ro
+      - ./volumes/static:/data/static
+      - ./volumes/media:/data/media
+    depends_on:
+      - django_admin
+      - postgres_movies
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_movies_value:
+  redis_movies_value:

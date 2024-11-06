@@ -1,0 +1,4 @@
+Generic single-database configuration with an async dbapi.
+
+    op.execute(sa.text("CREATE TABLE IF NOT EXISTS login_history_1 PARTITION OF login_history FOR VALUES IN ('left')"))
+    op.execute(sa.text("CREATE TABLE IF NOT EXISTS login_history_2 PARTITION OF login_history FOR VALUES IN ('right')"))

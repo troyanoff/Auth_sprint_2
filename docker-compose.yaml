@@ -1,0 +1,149 @@
+version: '3'
+services:
+
+  postgres_auth:
+    image: postgres:16
+    container_name: postgres_auth
+    restart: always
+    volumes:
+      - postgres_auth_value:/var/lib/postgresql/data/
+    env_file:
+      - ./auth-service/.env
+    ports:
+      - 5432
+
+  redis_auth:
+    image: redis:latest
+    container_name: redis_auth
+    restart: always
+    volumes:
+      - redis_auth_value:/root/redis
+    ports:
+      - 6379
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    restart: always
+    depends_on:
+      - postgres_auth
+      - redis_auth
+    ports:
+      - 16686:16686
+
+  auth:
+    image: auth
+    build: ./auth-service/
+    container_name: auth
+    depends_on:
+      - postgres_auth
+      - redis_auth
+      - jaeger
+    env_file:
+      - ./auth-service/.env
+    ports:
+      - 8200
+
+  postgres_movies:
+    image: postgres:16
+    container_name: postgres_movies
+    restart: always
+    volumes:
+      - postgres_movies_value:/var/lib/postgresql/data/
+      - ./fastapi-solution/postgres_to_es/movies_database.sql:/docker-entrypoint-initdb.d/movies_database.sql
+    env_file:
+      - ./fastapi-solution/.env
+    ports:
+      - 5433:5433
+
+  elasticsearch:
+    image: elasticsearch:8.6.2
+    deploy:
+      resources:
+        limits:
+          memory: 1GB
+    container_name: elasticsearch
+    restart: always
+    volumes:
+      - es_movies_value:/var/lib/elasticsearch/data/
+    environment:
+      - xpack.security.enabled=false
+      - "discovery.type=single-node"
+    ports:
+      - 9200
+
+  etl:
+    image: etl
+    build: ./fastapi-solution/postgres_to_es
+    container_name: etl
+    depends_on:
+      - postgres_movies
+      - elasticsearch
+    env_file:
+      - ./fastapi-solution/.env
+
+  redis_movies:
+    image: redis:latest
+    container_name: redis_movies
+    restart: always
+    volumes:
+      - redis_movies_value:/root/redis
+    ports:
+      - 7000
+
+  movies:
+    image: movies
+    build: ./fastapi-solution/
+    container_name: movies
+    depends_on:
+      - redis_movies
+      - etl
+    env_file:
+      - ./fastapi-solution/.env
+    ports:
+      - 8000
+
+  django_admin:
+    image: django_admin
+    container_name: django_admin
+    build: ./movies_admin/app
+    depends_on:
+      - postgres_movies
+    volumes:
+      - static_value:/opt/app/static
+      - media_value:/opt/app/media
+    env_file:
+      - ./movies_admin/.env
+    ports:
+      - 8400
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs:/etc/nginx/conf.d:ro
+      - static_value:/data/static/:ro
+      - media_value://data/media/:ro
+    depends_on:
+      - postgres_movies
+      - postgres_auth
+      - elasticsearch
+      - etl
+      - redis_movies
+      - redis_auth
+      - movies
+      - auth
+      - django_admin
+      - jaeger
+    ports:
+      - 80:80
+
+volumes:
+  postgres_movies_value:
+  postgres_auth_value:
+  redis_auth_value:
+  redis_movies_value:
+  es_movies_value:
+  static_value:
+  media_value:
